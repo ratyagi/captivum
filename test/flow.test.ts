@@ -229,3 +229,18 @@ describe('actions end to end', () => {
     expect((res as { code?: string }).code).toBe('not_configured');
   });
 });
+
+describe('invite wording', () => {
+  it('keeps the label visible in a long title and writes a readable body', () => {
+    const r = rec([]);
+    r.name = 'Mapping propaganda: practices, media and power';
+    const p = buildEventPayload(r, date({ type: 'submission_deadline', label: 'Submission deadline', time: '16:43', rawPhrase: 'July 14, 2027 16:43' }), settings);
+    expect(p.title).toBe('Mapping propaganda: practices, media: Submission deadline');
+    expect(p.title.length).toBeLessThan(62);
+    expect(p.description).toContain('<b>Submission deadline</b>');
+    expect(p.description).toContain('Thu, Apr 15, 2027, 4:43 PM America/New_York');
+    expect(p.description).toContain('did not name a time zone');
+    expect(p.description).not.toContain('2027-04-15 16:43');
+    expect(p.description).toContain('<a href="https://e.org/h">');
+  });
+});

@@ -4,15 +4,30 @@
   "version": "0.1.0",
   "description": "Paste a link to a deadline or event, confirm the date, and get a calendar invite in Outlook.",
   "minimum_chrome_version": "116",
-  "action": { "default_title": "Captivum" },
-  "side_panel": { "default_path": "sidepanel.html" },
-  "background": { "service_worker": "background.js" },
-  "permissions": ["storage", "scripting", "sidePanel", "alarms", "clipboardRead"],
-  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Captivum"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "sidePanel",
+    "alarms",
+    "clipboardRead"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7ruJ4KXQMDYOoLbIqrn+TLzpPepO0cqU7BGPs7IMyuevi/JHUoyx/I6OANrMerxIHS/npNUO880MBrkU4OdyFal65BXuZX3Wqq67tShSoqe0N4YR/MyVDlL7IEv2RBH5dJFcUA3NvspSfE7P9s08ycaKUk/STGvDIPLh4GjKL6a8VycxXAD5t1178kkhxH9RRE5nbKalQA/9CSnytff5v4RszBooaF9cyCI0haPiIaThQcaliGvAXjXd7JPbhYnWrH/VWOo1Pr1wNu2taWMsj29Y9ShOEFKlxoS69WHEaV8Mo36aku2fPNTU2kk8g7G3Sm6jAeb/Tyb6lQzpslH5GQIDAQAB"
 }

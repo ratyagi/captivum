@@ -1,5 +1,6 @@
 import type { CaptivumRecord, DeliveryInfo, EventPayload, ExtractedDate, Settings } from '../types';
 import type { ScriptResult } from './script';
+import { fmtWhen } from './format';
 import { buildEventTitle } from './title';
 import { addDays, resolveTz, toIsoUtc, zonedToUtcMs } from './time';
 
@@ -9,8 +10,8 @@ function hash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-function human(date: string, time: string | null, tz: string | null): string {
-  return [date, time, tz].filter(Boolean).join(' ');
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** Builds the event the script will create. Pure, so it is easy to test. */
@@ -24,22 +25,16 @@ export function buildEventPayload(
   const assumedTz = !resolveTz(d.tz);
   const source = rec.finalUrl || rec.url;
 
-  const lines: string[] = [];
-  const ends = d.startDate
-    ? `${human(d.startDate, d.startTime, null)} to ${human(d.date, d.time, d.tz)}`
-    : human(d.date, d.time, d.tz);
-  lines.push(`${d.label}: ${ends}`);
-  if (d.time || d.startTime) {
-    lines.push(
-      assumedTz
-        ? `The page did not name a time zone. Captivum assumed ${settings.defaultTz}.`
-        : `Time zone: ${d.tz}`,
-    );
+  const when = fmtWhen(d, settings.defaultTz);
+  const hasClock = !!(d.time || d.startTime);
+  const parts: string[] = [`<b>${esc(d.label)}</b>`, esc(when)];
+  if (hasClock && assumedTz) {
+    parts.push(`<i>The page did not name a time zone, so Captivum assumed ${esc(settings.defaultTz)}. Check the page.</i>`);
   }
-  lines.push('', `Source: ${source}`);
-  if (d.rawPhrase) lines.push(`From the page: "${d.rawPhrase}"`);
-  lines.push('', 'Added with Captivum.');
-  const description = lines.join('\n');
+  parts.push('', `<b>For</b>`, `<a href="${esc(source)}">${esc(rec.name.trim() || source)}</a>`);
+  if (d.rawPhrase) parts.push('', `<b>From the page</b>`, `"${esc(d.rawPhrase)}"`);
+  parts.push('', '<i>Added with Captivum</i>');
+  const description = parts.join('<br>');
 
   const base = { title, description, sourceUrl: source };
   let body: Omit<EventPayload, 'requestId'>;

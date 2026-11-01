@@ -79,8 +79,17 @@ export function pickName(s: Pick<PageSnapshot, 'title' | 'ogTitle' | 'h1' | 'tex
   return name.length >= 4 ? { name, source: 'text' } : { name: '', source: 'none' };
 }
 
+/** Mail apps cut subjects at about 60 characters, so keep the name short enough for the label to show. */
+export function shortName(name: string, max = 38): string {
+  const n = name.trim();
+  if (n.length <= max) return n;
+  const cut = n.slice(0, max);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > 20 ? cut.slice(0, sp) : cut).replace(/[\s:;,\-]+$/, '');
+}
+
 export function buildEventTitle(name: string, d: Pick<ExtractedDate, 'label'>): string {
-  const n = name.trim() || 'Opportunity';
+  const n = shortName(name) || 'Opportunity';
   const l = d.label.trim();
   return l ? `${n}: ${l}` : n;
 }

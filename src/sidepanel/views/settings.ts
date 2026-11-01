@@ -1,7 +1,8 @@
 import type { Provider } from '../../types';
-import { browserTz } from '../../lib/time';
+import { resolveTz } from '../../lib/time';
+import { nowIn, resolveZoneInput } from '../../lib/tz';
 import { isScriptConfigured } from '../../lib/storage';
-import { h, type Ctx } from '../ui';
+import { ensureTzList, h, type Ctx } from '../ui';
 
 function textField(
   label: string,
@@ -41,65 +42,99 @@ export function renderSettings(ctx: Ctx): HTMLElement {
     paint();
   };
 
-  const check = h('button', {}, 'Check connection');
-  check.addEventListener('click', async () => {
-    check.disabled = true;
+  // Checks run by themselves when both boxes are filled, so there is no button for it.
+  const verify = async () => {
+    const cur = ctx.settings;
+    if (!isScriptConfigured(cur) || !cur.scriptSecret) return;
     show('good', 'Checking...');
     const res = await ctx.send({ type: 'scriptTest', sendInvite: false });
-    check.disabled = false;
     if (!res.ok) return show('bad', res.error);
-    show('good', `Connected. Sender ${res.sender}, receiver ${res.receiver}. Calendar: ${res.calendar}.`);
-  });
-  const test = h('button', {}, 'Send a test invite');
+    show('good', `Connected. Invites go from ${res.sender} to ${res.receiver}.`);
+  };
+  const test = h('button', { class: 'link' }, 'Send a test invite');
   test.addEventListener('click', async () => {
     test.disabled = true;
     show('good', 'Sending...');
     const res = await ctx.send({ type: 'scriptTest', sendInvite: true });
     test.disabled = false;
     if (!res.ok) return show('bad', res.error);
-    show('good', `Test invite sent to ${res.receiver}. Open Outlook on the web and look for Accept and Decline. `, String(res.eventId ?? ''));
+    show('good', `Test invite sent to ${res.receiver}. `, String(res.eventId ?? ''));
   });
   paint();
 
+  const saveAndVerify = async (patch: Partial<typeof s>) => {
+    await ctx.saveSettings(patch);
+    await verify();
+  };
   wrap.append(
     h('h2', {}, 'Sender (your Gmail)'),
     h(
       'div',
       { class: 'stack' },
-      textField('Web app URL', s.scriptUrl, (v) => ctx.saveSettings({ scriptUrl: v }), {
+      textField('Web app URL', s.scriptUrl, (v) => saveAndVerify({ scriptUrl: v }), {
         placeholder: 'https://script.google.com/macros/s/.../exec',
       }),
-      textField('Secret', s.scriptSecret, (v) => ctx.saveSettings({ scriptSecret: v }), { type: 'password' }),
-      h('div', { class: 'small muted' }, s.senderEmail ? `Sender: ${s.senderEmail}. Receiver: ${s.receiverEmail}.` : 'Sender and receiver show up here after you check the connection.'),
-      h('div', { class: 'row' }, check, test),
+      textField('Secret', s.scriptSecret, (v) => saveAndVerify({ scriptSecret: v }), { type: 'password' }),
+      h('div', { class: 'small muted' }, 'You only enter these once. They stay in this browser.'),
       result,
+      isScriptConfigured(s) ? h('div', {}, test) : null,
     ),
   );
 
   // Time zone
+  const tzInput = h('input', { type: 'text', value: s.defaultTz, list: 'tzlist', placeholder: 'A city, like London', autocomplete: 'off', spellcheck: false });
+  const tzNote = h('div', { class: 'small' });
+  const paintTz = (tz: string) => {
+    const when = nowIn(tz);
+    tzNote.textContent = when ? `Using ${tz}. It is ${when} there now.` : '';
+    tzNote.className = 'small muted';
+  };
+  paintTz(s.defaultTz);
+  tzInput.addEventListener('change', async () => {
+    const r = resolveZoneInput(tzInput.value);
+    if (!r.tz || !resolveTz(r.tz)) {
+      tzNote.textContent = 'Not recognised. Try a city (London, Tokyo, New York), an abbreviation (IST, CET) or a name like Europe/London.';
+      tzNote.className = 'small';
+      tzNote.style.color = 'var(--bad)';
+      return;
+    }
+    tzNote.style.color = '';
+    tzInput.value = r.tz;
+    paintTz(r.tz);
+    await ctx.saveSettings({ defaultTz: r.tz });
+  });
+  ensureTzList();
   wrap.append(
     h('h2', {}, 'Time zone'),
-    textField('Default time zone', s.defaultTz, (v) => ctx.saveSettings({ defaultTz: v || browserTz() }), {
-      help: 'Used when a page gives a time but no zone. Example: America/New_York.',
-    }),
+    h(
+      'label',
+      { class: 'field' },
+      'Default time zone',
+      tzInput,
+      h('span', { class: 'small' }, 'Used when a page gives a time but no zone. Any city or zone in the world works.'),
+    ),
+    tzNote,
   );
 
-  // AI
+  // AI, tucked away because most pages never need it.
   const llmToggle = h('input', { type: 'checkbox', checked: s.llmEnabled });
   llmToggle.addEventListener('change', () => ctx.saveSettings({ llmEnabled: llmToggle.checked }));
-  wrap.append(
-    h('h2', {}, 'AI check'),
-    h('p', { class: 'muted small', style: 'margin-top:0' }, 'The parser reads most pages on its own. The AI is only asked when the parser is unsure. It reads public page text only. Providers are tried in order.'),
+  const ai = h(
+    'details',
+    { class: 'more', style: 'margin-top:18px' },
+    h('summary', {}, 'AI help (optional)'),
+    h('p', { class: 'muted small' }, 'The parser reads most pages on its own. The AI is only asked when the parser is unsure. It sees public page text only.'),
     h('label', { class: 'check' }, llmToggle, 'Use AI when the parser is unsure'),
   );
-  for (const p of s.providers) wrap.append(providerBox(ctx, p));
+  for (const p of s.providers) ai.append(providerBox(ctx, p));
+  if (s.llmEnabled || s.providers.some((p) => p.apiKey)) ai.open = true;
+  wrap.append(ai);
 
   // About
   wrap.append(
     h('h2', {}, 'Usage'),
     h('div', { class: 'small muted' }, `${ctx.counters.totalInvites} invites sent in total.`),
   );
-  void isScriptConfigured;
   return wrap;
 }
 
@@ -111,14 +146,11 @@ function providerBox(ctx: Ctx, p: Provider): HTMLElement {
   const mode = h('select', {}, ...(['json_object', 'json_schema', 'none'] as const).map((m) => h('option', { value: m, selected: m === p.jsonMode }, m)));
   mode.addEventListener('change', () => save({ jsonMode: mode.value as Provider['jsonMode'] }));
   const out = h('div', { class: 'small' });
-  const test = h('button', {}, 'Test key');
-  test.addEventListener('click', async () => {
-    test.disabled = true;
-    out.textContent = 'Testing...';
+  const test = async () => {
+    out.textContent = 'Testing the key...';
     const res = await ctx.send({ type: 'llmTest', providerId: p.id });
-    test.disabled = false;
     out.textContent = res.ok ? String(res.message) : res.error;
-  });
+  };
   return h(
     'div',
     { class: 'card' },
@@ -126,11 +158,12 @@ function providerBox(ctx: Ctx, p: Provider): HTMLElement {
     h(
       'div',
       { class: 'stack', style: 'margin-top:8px' },
-      textField('API key', p.apiKey, (v) => save({ apiKey: v }), { type: 'password' }),
-      textField('Model', p.model, (v) => save({ model: v })),
-      textField('Base URL', p.baseUrl, (v) => save({ baseUrl: v })),
-      h('label', { class: 'field' }, 'Structured output mode', mode),
-      h('div', { class: 'row' }, test),
+      textField('API key', p.apiKey, async (v) => { await save({ apiKey: v }); if (v) await test(); }, { type: 'password' }),
+      h('details', { class: 'more' }, h('summary', {}, 'Advanced'),
+        h('div', { class: 'stack', style: 'margin-top:8px' },
+          textField('Model', p.model, (v) => save({ model: v })),
+          textField('Base URL', p.baseUrl, (v) => save({ baseUrl: v })),
+          h('label', { class: 'field' }, 'Structured output mode', mode))),
       out,
     ),
   );

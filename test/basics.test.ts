@@ -3,7 +3,7 @@ import { cleanName, pickName, buildEventTitle } from '../src/lib/title';
 import { resolveTz, zonedToUtcMs, addDays, isPast, toIsoUtc } from '../src/lib/time';
 import { extractUrl } from '../src/lib/url';
 import { buildLlmExcerpt, containsPhrase } from '../src/lib/text';
-import { findTz, normalizeTz } from '../src/lib/tz';
+import { findTz, normalizeTz, resolveZoneInput, nowIn } from '../src/lib/tz';
 
 describe('title', () => {
   it('strips site names and social wrappers', () => {
@@ -87,5 +87,34 @@ describe('text', () => {
     const out = buildLlmExcerpt(text, [20010]);
     expect(out.length).toBeLessThanOrEqual(12000);
     expect(out).toContain('March 3, 2027');
+  });
+});
+
+describe('world time zones', () => {
+  it('resolves cities, countries and abbreviations', () => {
+    expect(resolveZoneInput('London').tz).toBe('Europe/London');
+    expect(resolveZoneInput('tokyo').tz).toBe('Asia/Tokyo');
+    expect(resolveZoneInput('New York').tz).toBe('America/New_York');
+    expect(resolveZoneInput('UK').tz).toBe('Europe/London');
+    expect(resolveZoneInput('India').tz).toBe('Asia/Kolkata');
+    expect(resolveZoneInput('IST').tz).toBe('Asia/Kolkata');
+    expect(resolveZoneInput('Nairobi').tz).toBe('Africa/Nairobi');
+    expect(resolveZoneInput('Sao Paulo').tz).toBe('America/Sao_Paulo');
+    expect(resolveZoneInput('Europe/Berlin').tz).toBe('Europe/Berlin');
+    expect(resolveZoneInput('UTC+5:30').tz).toBe('UTC+05:30');
+    expect(resolveZoneInput('qwertyuiop').tz).toBeNull();
+  });
+  it('reads more zones from page text', () => {
+    expect(findTz('5pm AEST')).toBe('Australia/Sydney');
+    expect(findTz('midnight SGT')).toBe('Asia/Singapore');
+    expect(findTz('noon London time')).toBe('Europe/London');
+    expect(findTz('Real time updates')).toBeNull();
+  });
+  it('converts a London deadline across the clock change', () => {
+    const summer = zonedToUtcMs('2027-07-01', '17:00', resolveTz('Europe/London')!);
+    const winter = zonedToUtcMs('2027-12-01', '17:00', resolveTz('Europe/London')!);
+    expect(toIsoUtc(summer)).toBe('2027-07-01T16:00:00.000Z');
+    expect(toIsoUtc(winter)).toBe('2027-12-01T17:00:00.000Z');
+    expect(nowIn('Europe/London', new Date('2027-07-01T16:00:00Z'))).toContain('5:00 PM');
   });
 });

@@ -50,6 +50,25 @@
     return { text: "", color: "#4f46e5" };
   }
 
+  // src/lib/format.ts
+  function fmtDay(date) {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(
+      new Date(Date.UTC(y, m - 1, d))
+    );
+  }
+  function fmtClock(t) {
+    const [hh, mm] = t.split(":").map(Number);
+    const ap = hh >= 12 ? "PM" : "AM";
+    return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${ap}`;
+  }
+  function fmtWhen(d, fallbackTz) {
+    const zone = d.tz ?? fallbackTz ?? "";
+    const end = `${fmtDay(d.date)}${d.time ? ", " + fmtClock(d.time) : ""}${d.time && zone ? " " + zone : ""}`;
+    if (!d.startDate) return end;
+    return `${fmtDay(d.startDate)}${d.startTime ? ", " + fmtClock(d.startTime) : ""} to ${end}`;
+  }
+
   // src/lib/title.ts
   var LABELS = {
     abstract_deadline: "Abstract deadline",
@@ -118,8 +137,15 @@
     const name = cleanName(firstLine);
     return name.length >= 4 ? { name, source: "text" } : { name: "", source: "none" };
   }
+  function shortName(name, max = 38) {
+    const n = name.trim();
+    if (n.length <= max) return n;
+    const cut = n.slice(0, max);
+    const sp = cut.lastIndexOf(" ");
+    return (sp > 20 ? cut.slice(0, sp) : cut).replace(/[\s:;,\-]+$/, "");
+  }
   function buildEventTitle(name, d) {
-    const n = name.trim() || "Opportunity";
+    const n = shortName(name) || "Opportunity";
     const l = d.label.trim();
     return l ? `${n}: ${l}` : n;
   }
@@ -242,26 +268,24 @@
     for (let i = 0; i < s.length; i++) h = (h << 5) + h + s.charCodeAt(i) | 0;
     return (h >>> 0).toString(36);
   }
-  function human(date, time, tz) {
-    return [date, time, tz].filter(Boolean).join(" ");
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function buildEventPayload(rec, d, settings) {
     const title = buildEventTitle(rec.name, d);
     const tz = resolveTz(d.tz) ?? resolveTz(settings.defaultTz) ?? { kind: "fixed", minutes: 0 };
     const assumedTz = !resolveTz(d.tz);
     const source = rec.finalUrl || rec.url;
-    const lines = [];
-    const ends = d.startDate ? `${human(d.startDate, d.startTime, null)} to ${human(d.date, d.time, d.tz)}` : human(d.date, d.time, d.tz);
-    lines.push(`${d.label}: ${ends}`);
-    if (d.time || d.startTime) {
-      lines.push(
-        assumedTz ? `The page did not name a time zone. Captivum assumed ${settings.defaultTz}.` : `Time zone: ${d.tz}`
-      );
+    const when = fmtWhen(d, settings.defaultTz);
+    const hasClock = !!(d.time || d.startTime);
+    const parts = [`<b>${esc(d.label)}</b>`, esc(when)];
+    if (hasClock && assumedTz) {
+      parts.push(`<i>The page did not name a time zone, so Captivum assumed ${esc(settings.defaultTz)}. Check the page.</i>`);
     }
-    lines.push("", `Source: ${source}`);
-    if (d.rawPhrase) lines.push(`From the page: "${d.rawPhrase}"`);
-    lines.push("", "Added with Captivum.");
-    const description = lines.join("\n");
+    parts.push("", `<b>For</b>`, `<a href="${esc(source)}">${esc(rec.name.trim() || source)}</a>`);
+    if (d.rawPhrase) parts.push("", `<b>From the page</b>`, `"${esc(d.rawPhrase)}"`);
+    parts.push("", "<i>Added with Captivum</i>");
+    const description = parts.join("<br>");
     const base = { title, description, sourceUrl: source };
     let body;
     if (d.startDate) {
@@ -818,8 +842,8 @@
   }
   function reverseDuration(duration) {
     const reversed = {};
-    for (const key in duration) {
-      reversed[key] = -duration[key];
+    for (const key2 in duration) {
+      reversed[key2] = -duration[key2];
     }
     return reversed;
   }
@@ -872,8 +896,8 @@
       this.knownValues = {};
       this.impliedValues = {};
       if (knownComponents) {
-        for (const key in knownComponents) {
-          this.knownValues[key] = knownComponents[key];
+        for (const key2 in knownComponents) {
+          this.knownValues[key2] = knownComponents[key2];
         }
       }
       const date = reference.getDateWithAdjustedTimezone();
@@ -982,11 +1006,11 @@
       const component = new _ParsingComponents(this.reference);
       component.knownValues = {};
       component.impliedValues = {};
-      for (const key in this.knownValues) {
-        component.knownValues[key] = this.knownValues[key];
+      for (const key2 in this.knownValues) {
+        component.knownValues[key2] = this.knownValues[key2];
       }
-      for (const key in this.impliedValues) {
-        component.impliedValues[key] = this.impliedValues[key];
+      for (const key2 in this.impliedValues) {
+        component.impliedValues[key2] = this.impliedValues[key2];
       }
       return component;
     }
@@ -2097,14 +2121,14 @@
     }
     mergeResults(textBetween, fromResult, toResult) {
       if (!fromResult.start.isOnlyWeekdayComponent() && !toResult.start.isOnlyWeekdayComponent()) {
-        toResult.start.getCertainComponents().forEach((key) => {
-          if (!fromResult.start.isCertain(key)) {
-            fromResult.start.imply(key, toResult.start.get(key));
+        toResult.start.getCertainComponents().forEach((key2) => {
+          if (!fromResult.start.isCertain(key2)) {
+            fromResult.start.imply(key2, toResult.start.get(key2));
           }
         });
-        fromResult.start.getCertainComponents().forEach((key) => {
-          if (!toResult.start.isCertain(key)) {
-            toResult.start.imply(key, fromResult.start.get(key));
+        fromResult.start.getCertainComponents().forEach((key2) => {
+          if (!toResult.start.isCertain(key2)) {
+            toResult.start.imply(key2, fromResult.start.get(key2));
           }
         });
       }
@@ -3407,8 +3431,86 @@
     CET: "Europe/Paris",
     CEST: "Europe/Paris",
     BST: "Europe/London",
-    JST: "Asia/Tokyo"
+    JST: "Asia/Tokyo",
+    IST: "Asia/Kolkata",
+    AEST: "Australia/Sydney",
+    AEDT: "Australia/Sydney",
+    ACST: "Australia/Adelaide",
+    AWST: "Australia/Perth",
+    NZST: "Pacific/Auckland",
+    NZDT: "Pacific/Auckland",
+    SGT: "Asia/Singapore",
+    HKT: "Asia/Hong_Kong",
+    KST: "Asia/Seoul",
+    WIB: "Asia/Jakarta",
+    PKT: "Asia/Karachi",
+    SAST: "Africa/Johannesburg",
+    EAT: "Africa/Nairobi",
+    WAT: "Africa/Lagos",
+    WET: "Europe/Lisbon",
+    WEST: "Europe/Lisbon",
+    EET: "Europe/Helsinki",
+    EEST: "Europe/Helsinki",
+    MSK: "Europe/Moscow",
+    BRT: "America/Sao_Paulo",
+    HST: "Pacific/Honolulu",
+    AKST: "America/Anchorage",
+    AKDT: "America/Anchorage"
   };
+  var ALIASES = {
+    uk: "Europe/London",
+    "united kingdom": "Europe/London",
+    britain: "Europe/London",
+    england: "Europe/London",
+    india: "Asia/Kolkata",
+    calcutta: "Asia/Kolkata",
+    kiev: "Europe/Kyiv",
+    saigon: "Asia/Ho_Chi_Minh",
+    rangoon: "Asia/Yangon",
+    china: "Asia/Shanghai",
+    beijing: "Asia/Shanghai",
+    japan: "Asia/Tokyo",
+    korea: "Asia/Seoul",
+    germany: "Europe/Berlin",
+    france: "Europe/Paris",
+    spain: "Europe/Madrid",
+    italy: "Europe/Rome",
+    ireland: "Europe/Dublin",
+    singapore: "Asia/Singapore",
+    dubai: "Asia/Dubai",
+    uae: "Asia/Dubai",
+    sydney: "Australia/Sydney",
+    "new zealand": "Pacific/Auckland",
+    nyc: "America/New_York",
+    la: "America/Los_Angeles",
+    sf: "America/Los_Angeles",
+    "san francisco": "America/Los_Angeles",
+    "new york": "America/New_York",
+    chicago: "America/Chicago",
+    "los angeles": "America/Los_Angeles",
+    "sao paulo": "America/Sao_Paulo"
+  };
+  var zoneCache = null;
+  function allZones() {
+    if (zoneCache) return zoneCache;
+    let list = [];
+    try {
+      list = Intl.supportedValuesOf("timeZone");
+    } catch {
+      list = [];
+    }
+    const extra = ["UTC", "Asia/Kolkata", "Europe/Kyiv", "America/Argentina/Buenos_Aires"];
+    zoneCache = [.../* @__PURE__ */ new Set([...list, ...extra])].sort();
+    return zoneCache;
+  }
+  function key(s) {
+    return s.trim().toLowerCase().replace(/[_\s]+/g, " ");
+  }
+  function exactCity(input) {
+    const k = key(input);
+    if (!k) return null;
+    return allZones().find((z) => key(z.split("/").pop()) === k) ?? null;
+  }
   var NAMED_ZONES = {
     eastern: "America/New_York",
     central: "America/Chicago",
@@ -3417,13 +3519,23 @@
   };
   var NAMED_RE = /\b(Eastern|Pacific|Central|Mountain)(?:\s+(?:Standard|Daylight))?\s+Time\b/i;
   var AOE_RE = /(?:\bAoE\b|\bA\.o\.E\.?|\bAnywhere on Earth\b)/i;
-  var TOKEN_RE = /\b(UTC|GMT|PST|PDT|PT|EST|EDT|ET|CST|CDT|CT|MST|MDT|MT|CET|CEST|BST|JST)\b(?:\s?([+-])(\d{1,2})(?::?(\d{2}))?)?/;
+  var TOKEN_RE = new RegExp(
+    `\\b(UTC|GMT|${Object.keys(ZONE_WORDS).join("|")})\\b(?:\\s?([+-])(\\d{1,2})(?::?(\\d{2}))?)?`
+  );
+  var CITY_TIME_RE = /\b([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)?) (?:local )?time\b/g;
   function findTz(s) {
     if (AOE_RE.test(s)) return "AoE";
     const named = s.match(NAMED_RE);
     if (named) return NAMED_ZONES[named[1].toLowerCase()];
     const m = s.match(TOKEN_RE);
-    if (!m) return null;
+    if (!m) {
+      for (const c of s.matchAll(CITY_TIME_RE)) {
+        const k = key(c[1]);
+        const r = (k.length > 3 ? ALIASES[k] : void 0) ?? exactCity(c[1]);
+        if (r) return r;
+      }
+      return null;
+    }
     const word = m[1];
     if (word === "UTC" || word === "GMT") {
       if (m[2] && m[3]) {
@@ -4053,15 +4165,15 @@ ${excerpt}`;
 
   // src/lib/storage.ts
   var chromeStore = {
-    async get(key, fallback) {
-      const r = await chrome.storage.local.get(key);
-      return r[key] ?? fallback;
+    async get(key2, fallback) {
+      const r = await chrome.storage.local.get(key2);
+      return r[key2] ?? fallback;
     },
-    async set(key, value) {
-      await chrome.storage.local.set({ [key]: value });
+    async set(key2, value) {
+      await chrome.storage.local.set({ [key2]: value });
     },
-    async remove(key) {
-      await chrome.storage.local.remove(key);
+    async remove(key2) {
+      await chrome.storage.local.remove(key2);
     }
   };
   var DEFAULT_PROVIDERS = [
@@ -4131,8 +4243,8 @@ ${excerpt}`;
       if (u.protocol !== "http:" && u.protocol !== "https:") return null;
       const host = u.hostname.replace(/^www\./, "");
       const isX = host === "x.com" || host === "twitter.com";
-      for (const key of [...u.searchParams.keys()]) {
-        if (TRACKING.test(key) || isX && (key === "s" || key === "t")) u.searchParams.delete(key);
+      for (const key2 of [...u.searchParams.keys()]) {
+        if (TRACKING.test(key2) || isX && (key2 === "s" || key2 === "t")) u.searchParams.delete(key2);
       }
       u.hash = "";
       return u.toString();

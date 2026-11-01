@@ -31,31 +31,32 @@ export function renderHistory(ctx: Ctx): HTMLElement {
       h(
         'button',
         {
+          class: 'link',
           onclick: async () => {
             await ctx.send({ type: 'reopen', id: r.id });
             ctx.drafts.delete(r.id);
             ctx.setTab('add');
           },
         },
-        'Edit and resend',
+        'Edit',
       ),
     );
     if (sent.length) {
       actions.append(
-        confirmButton('Cancel invites', async () => {
+        confirmButton('Cancel invite', async () => {
           const res = await ctx.send({ type: 'cancelInvites', id: r.id });
           ctx.flash = res.ok
             ? { kind: 'good', text: 'Invites cancelled. The calendar entry is removed for your receiver.' }
             : { kind: 'bad', text: res.error };
           ctx.rerender();
-        }),
+        }, 'link danger'),
       );
     }
     actions.append(
-      confirmButton('Remove from list', async () => {
+      confirmButton('Remove', async () => {
         await ctx.send({ type: 'delete', id: r.id });
         ctx.rerender();
-      }),
+      }, 'link danger'),
     );
     card.append(actions);
     wrap.append(card);

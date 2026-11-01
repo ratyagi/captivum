@@ -189,15 +189,15 @@
 
   // src/lib/storage.ts
   var chromeStore = {
-    async get(key, fallback) {
-      const r = await chrome.storage.local.get(key);
-      return r[key] ?? fallback;
+    async get(key2, fallback) {
+      const r = await chrome.storage.local.get(key2);
+      return r[key2] ?? fallback;
     },
-    async set(key, value) {
-      await chrome.storage.local.set({ [key]: value });
+    async set(key2, value) {
+      await chrome.storage.local.set({ [key2]: value });
     },
-    async remove(key) {
-      await chrome.storage.local.remove(key);
+    async remove(key2) {
+      await chrome.storage.local.remove(key2);
     }
   };
   var DEFAULT_PROVIDERS = [
@@ -275,8 +275,15 @@
     if (isWindow) return WINDOW_LABELS[type] ?? LABELS[type];
     return LABELS[type];
   }
+  function shortName(name, max = 38) {
+    const n = name.trim();
+    if (n.length <= max) return n;
+    const cut = n.slice(0, max);
+    const sp = cut.lastIndexOf(" ");
+    return (sp > 20 ? cut.slice(0, sp) : cut).replace(/[\s:;,\-]+$/, "");
+  }
   function buildEventTitle(name, d) {
-    const n = name.trim() || "Opportunity";
+    const n = shortName(name) || "Opportunity";
     const l = d.label.trim();
     return l ? `${n}: ${l}` : n;
   }
@@ -322,6 +329,195 @@
     }
   }
 
+  // src/lib/tz.ts
+  var ZONE_WORDS = {
+    PST: "America/Los_Angeles",
+    PDT: "America/Los_Angeles",
+    PT: "America/Los_Angeles",
+    EST: "America/New_York",
+    EDT: "America/New_York",
+    ET: "America/New_York",
+    CST: "America/Chicago",
+    CDT: "America/Chicago",
+    CT: "America/Chicago",
+    MST: "America/Denver",
+    MDT: "America/Denver",
+    MT: "America/Denver",
+    CET: "Europe/Paris",
+    CEST: "Europe/Paris",
+    BST: "Europe/London",
+    JST: "Asia/Tokyo",
+    IST: "Asia/Kolkata",
+    AEST: "Australia/Sydney",
+    AEDT: "Australia/Sydney",
+    ACST: "Australia/Adelaide",
+    AWST: "Australia/Perth",
+    NZST: "Pacific/Auckland",
+    NZDT: "Pacific/Auckland",
+    SGT: "Asia/Singapore",
+    HKT: "Asia/Hong_Kong",
+    KST: "Asia/Seoul",
+    WIB: "Asia/Jakarta",
+    PKT: "Asia/Karachi",
+    SAST: "Africa/Johannesburg",
+    EAT: "Africa/Nairobi",
+    WAT: "Africa/Lagos",
+    WET: "Europe/Lisbon",
+    WEST: "Europe/Lisbon",
+    EET: "Europe/Helsinki",
+    EEST: "Europe/Helsinki",
+    MSK: "Europe/Moscow",
+    BRT: "America/Sao_Paulo",
+    HST: "Pacific/Honolulu",
+    AKST: "America/Anchorage",
+    AKDT: "America/Anchorage"
+  };
+  var ALIASES = {
+    uk: "Europe/London",
+    "united kingdom": "Europe/London",
+    britain: "Europe/London",
+    england: "Europe/London",
+    india: "Asia/Kolkata",
+    calcutta: "Asia/Kolkata",
+    kiev: "Europe/Kyiv",
+    saigon: "Asia/Ho_Chi_Minh",
+    rangoon: "Asia/Yangon",
+    china: "Asia/Shanghai",
+    beijing: "Asia/Shanghai",
+    japan: "Asia/Tokyo",
+    korea: "Asia/Seoul",
+    germany: "Europe/Berlin",
+    france: "Europe/Paris",
+    spain: "Europe/Madrid",
+    italy: "Europe/Rome",
+    ireland: "Europe/Dublin",
+    singapore: "Asia/Singapore",
+    dubai: "Asia/Dubai",
+    uae: "Asia/Dubai",
+    sydney: "Australia/Sydney",
+    "new zealand": "Pacific/Auckland",
+    nyc: "America/New_York",
+    la: "America/Los_Angeles",
+    sf: "America/Los_Angeles",
+    "san francisco": "America/Los_Angeles",
+    "new york": "America/New_York",
+    chicago: "America/Chicago",
+    "los angeles": "America/Los_Angeles",
+    "sao paulo": "America/Sao_Paulo"
+  };
+  var zoneCache = null;
+  function allZones() {
+    if (zoneCache) return zoneCache;
+    let list = [];
+    try {
+      list = Intl.supportedValuesOf("timeZone");
+    } catch {
+      list = [];
+    }
+    const extra = ["UTC", "Asia/Kolkata", "Europe/Kyiv", "America/Argentina/Buenos_Aires"];
+    zoneCache = [.../* @__PURE__ */ new Set([...list, ...extra])].sort();
+    return zoneCache;
+  }
+  function key(s) {
+    return s.trim().toLowerCase().replace(/[_\s]+/g, " ");
+  }
+  function exactCity(input) {
+    const k = key(input);
+    if (!k) return null;
+    return allZones().find((z) => key(z.split("/").pop()) === k) ?? null;
+  }
+  function byCity(input) {
+    const k = key(input);
+    if (!k) return [];
+    const zones = allZones();
+    const exact = zones.filter((z) => key(z.split("/").pop()) === k);
+    if (exact.length) return exact;
+    if (k.length < 3) return [];
+    return zones.filter((z) => key(z.split("/").pop()).startsWith(k) || key(z).includes(k));
+  }
+  function resolveZoneInput(input) {
+    const t = (input ?? "").trim();
+    if (!t) return { tz: null, candidates: [] };
+    const direct = normalizeTz(t);
+    if (direct) return { tz: direct, candidates: [] };
+    const alias = ALIASES[key(t)];
+    if (alias) return { tz: alias, candidates: [] };
+    const upper = ZONE_WORDS[t.toUpperCase()];
+    if (upper) return { tz: upper, candidates: [] };
+    const found = byCity(t);
+    return { tz: found[0] ?? null, candidates: found.slice(0, 8) };
+  }
+  function nowIn(tz, now = /* @__PURE__ */ new Date()) {
+    const r = resolveTz(tz);
+    if (!r) return "";
+    if (r.kind === "iana") {
+      return new Intl.DateTimeFormat("en-US", { timeZone: r.id, weekday: "short", hour: "numeric", minute: "2-digit" }).format(now);
+    }
+    const d = new Date(now.getTime() + r.minutes * 6e4);
+    return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", hour: "numeric", minute: "2-digit" }).format(d);
+  }
+  var NAMED_ZONES = {
+    eastern: "America/New_York",
+    central: "America/Chicago",
+    mountain: "America/Denver",
+    pacific: "America/Los_Angeles"
+  };
+  var NAMED_RE = /\b(Eastern|Pacific|Central|Mountain)(?:\s+(?:Standard|Daylight))?\s+Time\b/i;
+  var AOE_RE = /(?:\bAoE\b|\bA\.o\.E\.?|\bAnywhere on Earth\b)/i;
+  var TOKEN_RE = new RegExp(
+    `\\b(UTC|GMT|${Object.keys(ZONE_WORDS).join("|")})\\b(?:\\s?([+-])(\\d{1,2})(?::?(\\d{2}))?)?`
+  );
+  var CITY_TIME_RE = /\b([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)?) (?:local )?time\b/g;
+  function findTz(s) {
+    if (AOE_RE.test(s)) return "AoE";
+    const named = s.match(NAMED_RE);
+    if (named) return NAMED_ZONES[named[1].toLowerCase()];
+    const m = s.match(TOKEN_RE);
+    if (!m) {
+      for (const c of s.matchAll(CITY_TIME_RE)) {
+        const k = key(c[1]);
+        const r = (k.length > 3 ? ALIASES[k] : void 0) ?? exactCity(c[1]);
+        if (r) return r;
+      }
+      return null;
+    }
+    const word = m[1];
+    if (word === "UTC" || word === "GMT") {
+      if (m[2] && m[3]) {
+        return `UTC${m[2]}${String(m[3]).padStart(2, "0")}:${m[4] ?? "00"}`;
+      }
+      return "UTC";
+    }
+    return ZONE_WORDS[word] ?? null;
+  }
+  function normalizeTz(input) {
+    if (!input) return null;
+    const t = input.trim();
+    if (!t) return null;
+    const found = findTz(t);
+    if (found) return found;
+    return resolveTz(t) ? t : null;
+  }
+
+  // src/lib/format.ts
+  function fmtDay(date) {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(
+      new Date(Date.UTC(y, m - 1, d))
+    );
+  }
+  function fmtClock(t) {
+    const [hh, mm] = t.split(":").map(Number);
+    const ap = hh >= 12 ? "PM" : "AM";
+    return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${ap}`;
+  }
+  function fmtWhen(d, fallbackTz) {
+    const zone = d.tz ?? fallbackTz ?? "";
+    const end = `${fmtDay(d.date)}${d.time ? ", " + fmtClock(d.time) : ""}${d.time && zone ? " " + zone : ""}`;
+    if (!d.startDate) return end;
+    return `${fmtDay(d.startDate)}${d.startTime ? ", " + fmtClock(d.startTime) : ""} to ${end}`;
+  }
+
   // src/sidepanel/ui.ts
   function h(tag, attrs = {}, ...children) {
     const el = document.createElement(tag);
@@ -345,22 +541,6 @@
     bad_order: "The start is after the end."
   };
   var BAD_FLAGS = ["already_passed", "bad_order", "date_mismatch", "phrase_not_found"];
-  function fmtDay(date) {
-    const [y, m, d] = date.split("-").map(Number);
-    return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(
-      new Date(Date.UTC(y, m - 1, d))
-    );
-  }
-  function fmtClock(t) {
-    const [hh, mm] = t.split(":").map(Number);
-    const ap = hh >= 12 ? "PM" : "AM";
-    return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${ap}`;
-  }
-  function fmtWhen(d) {
-    const end = `${fmtDay(d.date)}${d.time ? ", " + fmtClock(d.time) : ""}${d.tz && d.time ? " " + d.tz : ""}`;
-    if (!d.startDate) return end;
-    return `${fmtDay(d.startDate)}${d.startTime ? ", " + fmtClock(d.startTime) : ""} to ${end}`;
-  }
   function statusChip(status) {
     const map = {
       extracting: ["Reading", ""],
@@ -421,22 +601,19 @@
   function emptyState(mood, text) {
     return h("div", { class: "empty" }, cat(mood, 84), h("p", {}, text));
   }
+  function ensureTzList(extra = []) {
+    if (document.getElementById("tzlist")) return;
+    const dl = document.createElement("datalist");
+    dl.id = "tzlist";
+    for (const t of /* @__PURE__ */ new Set(["AoE", "UTC", ...extra, ...allZones()])) {
+      const o = document.createElement("option");
+      o.value = t;
+      dl.append(o);
+    }
+    document.body.append(dl);
+  }
 
   // src/sidepanel/views/add.ts
-  var TZ_OPTIONS = [
-    "AoE",
-    "UTC",
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Los_Angeles",
-    "Europe/London",
-    "Europe/Paris",
-    "Asia/Kolkata",
-    "Asia/Singapore",
-    "Asia/Tokyo",
-    "Australia/Sydney"
-  ];
   var ACTIVE = /* @__PURE__ */ new Set(["extracting", "pending", "sending", "queued", "failed", "error"]);
   function renderAdd(ctx2) {
     const wrap = h("div", {});
@@ -446,26 +623,29 @@
           "div",
           { class: "notice" },
           "Your sender is not linked yet, so invites cannot be sent. ",
-          h("button", { class: "link", onclick: () => ctx2.setTab("settings") }, "Open Settings")
+          h("button", { class: "link", onclick: () => ctx2.setTab("settings") }, "Set it up")
         )
       );
     }
     if (ctx2.flash) wrap.append(h("div", { class: `notice ${ctx2.flash.kind}` }, ctx2.flash.kind === "good" ? cat("happy", 40) : null, ctx2.flash.text));
     const input = h("input", {
       type: "text",
-      placeholder: "Paste a link to a deadline or event",
+      placeholder: "Paste a link and press Enter",
       value: ctx2.addDraft,
-      "aria-label": "Link"
+      "aria-label": "Link",
+      autofocus: true
     });
     input.addEventListener("input", () => ctx2.addDraft = input.value);
     const errorBox = h("div", { class: "small", style: "color:var(--bad);margin-top:6px" });
-    const add = h("button", { class: "primary" }, "Add");
+    let busy = false;
     const submit = async () => {
       errorBox.textContent = "";
-      if (!input.value.trim()) return;
-      add.disabled = true;
+      if (busy || !input.value.trim()) return;
+      busy = true;
+      input.disabled = true;
       const res = await ctx2.send({ type: "extract", input: input.value });
-      add.disabled = false;
+      busy = false;
+      input.disabled = false;
       if (!res.ok) {
         errorBox.textContent = res.error;
         return;
@@ -474,26 +654,14 @@
       ctx2.flash = res.existing ? { kind: "warn", text: "That link is already in your list." } : null;
       ctx2.rerender();
     };
-    add.addEventListener("click", submit);
     input.addEventListener("keydown", (e) => e.key === "Enter" && submit());
-    const paste = h(
-      "button",
-      {
-        title: "Paste from clipboard",
-        onclick: async () => {
-          try {
-            const t = await navigator.clipboard.readText();
-            input.value = t.trim();
-            ctx2.addDraft = input.value;
-            input.focus();
-          } catch {
-            errorBox.textContent = "Chrome did not allow reading the clipboard. Paste with Ctrl+V or Cmd+V instead.";
-          }
-        }
-      },
-      "Paste"
+    input.addEventListener(
+      "paste",
+      () => setTimeout(() => {
+        if (/^https?:\/\/\S+$/i.test(input.value.trim())) void submit();
+      }, 0)
     );
-    wrap.append(h("div", { class: "row" }, input, paste, add), errorBox);
+    wrap.append(input, errorBox);
     const active = ctx2.records.filter((r) => ACTIVE.has(r.status));
     if (!active.length && !ctx2.flash) {
       wrap.append(
@@ -513,7 +681,7 @@
           "div",
           { class: "card" },
           h("div", { class: "row" }, cat("look", 44), `Reading ${hostOf(r.url)}...`),
-          h("div", { class: "actions" }, h("button", { onclick: async () => (await ctx2.send({ type: "delete", id: r.id }), ctx2.rerender()) }, "Cancel"))
+          h("div", { class: "actions" }, h("button", { class: "link", onclick: async () => (await ctx2.send({ type: "delete", id: r.id }), ctx2.rerender()) }, "Cancel"))
         );
       case "sending":
         return h("div", { class: "card" }, h("div", { class: "row" }, cat("look", 44), `Sending the invite for ${r.name || hostOf(r.url)}...`));
@@ -526,8 +694,8 @@
           h(
             "div",
             { class: "actions" },
-            h("button", { onclick: () => ctx2.send({ type: "extract", input: r.url }).then(() => ctx2.rerender()) }, "Try again"),
-            h("button", { onclick: async () => (await ctx2.send({ type: "delete", id: r.id }), ctx2.rerender()) }, "Remove")
+            h("button", { class: "primary", onclick: () => ctx2.send({ type: "extract", input: r.url }).then(() => ctx2.rerender()) }, "Try again"),
+            h("button", { class: "link", onclick: async () => (await ctx2.send({ type: "delete", id: r.id }), ctx2.rerender()) }, "Remove")
           )
         );
       case "queued":
@@ -541,8 +709,7 @@
             "div",
             { class: "actions" },
             h("button", { class: "primary", onclick: async () => (await ctx2.send({ type: "deliver", id: r.id }), ctx2.rerender()) }, "Try now"),
-            h("button", { onclick: async () => (await ctx2.send({ type: "reopen", id: r.id }), ctx2.rerender()) }, "Edit"),
-            r.errorCode === "not_configured" || r.errorCode === "bad_secret" ? h("button", { onclick: () => ctx2.setTab("settings") }, "Settings") : null
+            r.errorCode === "not_configured" || r.errorCode === "bad_secret" ? h("button", { class: "link", onclick: () => ctx2.setTab("settings") }, "Fix sender") : h("button", { class: "link", onclick: async () => (await ctx2.send({ type: "reopen", id: r.id }), ctx2.rerender()) }, "Edit")
           )
         );
       default:
@@ -573,7 +740,7 @@
       ctx2.scheduleSave(r.id);
     });
     card.append(
-      h("label", { class: "field" }, "Name", nameInput),
+      nameInput,
       h("div", { class: "small muted", style: "margin-top:4px" }, `From ${hostOf(r.finalUrl || r.url)}`, r.usedLlm ? " (checked with AI)" : "")
     );
     for (const n of r.notes) card.append(h("div", { class: "notice" }, n));
@@ -586,6 +753,7 @@
     const addDate = h(
       "button",
       {
+        class: "link",
         onclick: () => {
           const base = {
             id: `m${Date.now().toString(36)}`,
@@ -606,9 +774,9 @@
           renderDates();
         }
       },
-      "Add a date"
+      "+ Add a date"
     );
-    const confirm = h("button", { class: "primary" }, "Confirm and send");
+    const confirm = h("button", { class: "primary wide" }, "Send invite");
     confirm.addEventListener("click", async () => {
       const probs = validateForSend({ name: draft.name, dates: draft.dates });
       if (probs.length) {
@@ -633,19 +801,22 @@
       ctx2.rerender();
     });
     card.append(
-      h("h2", {}, "Dates"),
       datesBox,
       h("div", { class: "actions" }, addDate),
       errors,
+      confirm,
       h(
         "div",
-        { class: "actions" },
-        confirm,
-        confirmButton("Discard", async () => {
-          ctx2.drafts.delete(r.id);
-          await ctx2.send({ type: "delete", id: r.id });
-          ctx2.rerender();
-        })
+        { class: "center" },
+        confirmButton(
+          "Discard",
+          async () => {
+            ctx2.drafts.delete(r.id);
+            await ctx2.send({ type: "delete", id: r.id });
+            ctx2.rerender();
+          },
+          "link danger"
+        )
       )
     );
     return card;
@@ -695,62 +866,47 @@
       });
       return i;
     };
-    const hasStart = !!d.startDate;
-    const windowToggle = h("label", { class: "check small muted" });
-    const wt = h("input", { type: "checkbox", checked: hasStart });
-    windowToggle.append(wt, "This runs over a period");
-    wt.addEventListener("change", () => {
-      if (wt.checked) {
-        d.startDate = d.date || null;
-        d.label = defaultLabel(d.type, true);
-      } else {
-        d.startDate = null;
-        d.startTime = null;
-        d.label = defaultLabel(d.type, false);
-      }
-      touch(true);
-      const repl = dateRow(ctx2, r, draft, d, refreshTitles);
-      row.replaceWith(repl);
-    });
-    const tz = h("input", { type: "text", value: d.tz ?? "", list: "tzlist", placeholder: `Default (${ctx2.settings.defaultTz})`, "aria-label": "Time zone" });
+    const tz = h("input", { type: "text", value: d.tz ?? "", list: "tzlist", placeholder: `Default (${ctx2.settings.defaultTz}). Try a city, like London`, "aria-label": "Time zone" });
     tz.addEventListener("change", () => {
-      d.tz = tz.value.trim() || null;
+      const raw = tz.value.trim();
+      const res = raw ? resolveZoneInput(raw) : { tz: null };
+      d.tz = res.tz ?? (raw || null);
+      if (res.tz) tz.value = res.tz;
       touch(true);
     });
-    const parts = [
-      h("div", { class: "row" }, check, label),
-      d.startDate !== null ? h(
-        "div",
-        { class: "grid2" },
-        field("Starts", dateInput(d.startDate, (v) => d.startDate = v || null)),
-        field("Start time (optional)", timeInput(d.startTime, (v) => d.startTime = v))
-      ) : null,
+    const startInput = h("input", { type: "date", value: d.startDate ?? "" });
+    startInput.addEventListener("change", () => {
+      const wasPlain = d.label === defaultLabel(d.type, d.startDate !== null);
+      d.startDate = startInput.value || null;
+      if (!d.startDate) d.startTime = null;
+      if (wasPlain) d.label = defaultLabel(d.type, d.startDate !== null);
+      label.value = d.label;
+      touch(true);
+    });
+    const startTime = timeInput(d.startTime, (v) => d.startTime = v);
+    const more = h(
+      "details",
+      { class: "more" },
+      h("summary", {}, "More"),
       h(
         "div",
-        { class: "grid2" },
-        field(d.startDate !== null ? "Ends" : "Date", dateInput(d.date, (v) => d.date = v)),
-        field("Time (optional)", timeInput(d.time, (v) => d.time = v))
-      ),
-      field("Time zone", tz),
-      windowToggle,
+        { class: "stack", style: "margin-top:8px" },
+        h("div", { class: "grid2" }, field("Starts (for a period)", startInput), field("Start time", startTime)),
+        field("Time zone", tz),
+        d.rawPhrase ? h("div", { class: "quote" }, d.startPhrase ? `"${d.startPhrase}" ... ` : "", `"${d.rawPhrase}"`) : null
+      )
+    );
+    if (d.startDate || d.tz || d.flags.includes("no_timezone")) more.open = true;
+    const parts = [
+      h("div", { class: "row" }, check, label),
+      h("div", { class: "grid2" }, field(d.startDate ? "Ends" : "Date", dateInput(d.date, (v) => d.date = v)), field("Time (optional)", timeInput(d.time, (v) => d.time = v))),
       chips,
-      d.rawPhrase ? h("div", { class: "quote" }, d.startPhrase ? `"${d.startPhrase}" ... ` : "", `"${d.rawPhrase}"`) : null,
-      h("div", { class: "small muted" }, "Event title"),
       h("div", { class: "title-preview", "data-title-for": d.id }, buildEventTitle(draft.name, d)),
-      confirmButton("Remove this date", () => {
-        const i = draft.dates.indexOf(d);
-        if (i >= 0) draft.dates.splice(i, 1);
-        ctx2.scheduleSave(r.id);
-        row.remove();
-      })
+      more
     ];
     row.append(...parts.filter(Boolean));
     paintChips();
-    if (!document.getElementById("tzlist")) {
-      const dl = h("datalist", { id: "tzlist" });
-      for (const t of /* @__PURE__ */ new Set([ctx2.settings.defaultTz, ...TZ_OPTIONS])) dl.append(h("option", { value: t }));
-      document.body.append(dl);
-    }
+    ensureTzList([ctx2.settings.defaultTz]);
     return row;
   }
 
@@ -785,29 +941,30 @@
         h(
           "button",
           {
+            class: "link",
             onclick: async () => {
               await ctx2.send({ type: "reopen", id: r.id });
               ctx2.drafts.delete(r.id);
               ctx2.setTab("add");
             }
           },
-          "Edit and resend"
+          "Edit"
         )
       );
       if (sent.length) {
         actions.append(
-          confirmButton("Cancel invites", async () => {
+          confirmButton("Cancel invite", async () => {
             const res = await ctx2.send({ type: "cancelInvites", id: r.id });
             ctx2.flash = res.ok ? { kind: "good", text: "Invites cancelled. The calendar entry is removed for your receiver." } : { kind: "bad", text: res.error };
             ctx2.rerender();
-          })
+          }, "link danger")
         );
       }
       actions.append(
-        confirmButton("Remove from list", async () => {
+        confirmButton("Remove", async () => {
           await ctx2.send({ type: "delete", id: r.id });
           ctx2.rerender();
-        })
+        }, "link danger")
       );
       card.append(actions);
       wrap.append(card);
@@ -845,58 +1002,91 @@
       ctx2.settingsMsg = { kind, text, testEventId };
       paint();
     };
-    const check = h("button", {}, "Check connection");
-    check.addEventListener("click", async () => {
-      check.disabled = true;
+    const verify = async () => {
+      const cur = ctx2.settings;
+      if (!isScriptConfigured(cur) || !cur.scriptSecret) return;
       show("good", "Checking...");
       const res = await ctx2.send({ type: "scriptTest", sendInvite: false });
-      check.disabled = false;
       if (!res.ok) return show("bad", res.error);
-      show("good", `Connected. Sender ${res.sender}, receiver ${res.receiver}. Calendar: ${res.calendar}.`);
-    });
-    const test = h("button", {}, "Send a test invite");
+      show("good", `Connected. Invites go from ${res.sender} to ${res.receiver}.`);
+    };
+    const test = h("button", { class: "link" }, "Send a test invite");
     test.addEventListener("click", async () => {
       test.disabled = true;
       show("good", "Sending...");
       const res = await ctx2.send({ type: "scriptTest", sendInvite: true });
       test.disabled = false;
       if (!res.ok) return show("bad", res.error);
-      show("good", `Test invite sent to ${res.receiver}. Open Outlook on the web and look for Accept and Decline. `, String(res.eventId ?? ""));
+      show("good", `Test invite sent to ${res.receiver}. `, String(res.eventId ?? ""));
     });
     paint();
+    const saveAndVerify = async (patch) => {
+      await ctx2.saveSettings(patch);
+      await verify();
+    };
     wrap.append(
       h("h2", {}, "Sender (your Gmail)"),
       h(
         "div",
         { class: "stack" },
-        textField("Web app URL", s.scriptUrl, (v) => ctx2.saveSettings({ scriptUrl: v }), {
+        textField("Web app URL", s.scriptUrl, (v) => saveAndVerify({ scriptUrl: v }), {
           placeholder: "https://script.google.com/macros/s/.../exec"
         }),
-        textField("Secret", s.scriptSecret, (v) => ctx2.saveSettings({ scriptSecret: v }), { type: "password" }),
-        h("div", { class: "small muted" }, s.senderEmail ? `Sender: ${s.senderEmail}. Receiver: ${s.receiverEmail}.` : "Sender and receiver show up here after you check the connection."),
-        h("div", { class: "row" }, check, test),
-        result
+        textField("Secret", s.scriptSecret, (v) => saveAndVerify({ scriptSecret: v }), { type: "password" }),
+        h("div", { class: "small muted" }, "You only enter these once. They stay in this browser."),
+        result,
+        isScriptConfigured(s) ? h("div", {}, test) : null
       )
     );
+    const tzInput = h("input", { type: "text", value: s.defaultTz, list: "tzlist", placeholder: "A city, like London", autocomplete: "off", spellcheck: false });
+    const tzNote = h("div", { class: "small" });
+    const paintTz = (tz) => {
+      const when = nowIn(tz);
+      tzNote.textContent = when ? `Using ${tz}. It is ${when} there now.` : "";
+      tzNote.className = "small muted";
+    };
+    paintTz(s.defaultTz);
+    tzInput.addEventListener("change", async () => {
+      const r = resolveZoneInput(tzInput.value);
+      if (!r.tz || !resolveTz(r.tz)) {
+        tzNote.textContent = "Not recognised. Try a city (London, Tokyo, New York), an abbreviation (IST, CET) or a name like Europe/London.";
+        tzNote.className = "small";
+        tzNote.style.color = "var(--bad)";
+        return;
+      }
+      tzNote.style.color = "";
+      tzInput.value = r.tz;
+      paintTz(r.tz);
+      await ctx2.saveSettings({ defaultTz: r.tz });
+    });
+    ensureTzList();
     wrap.append(
       h("h2", {}, "Time zone"),
-      textField("Default time zone", s.defaultTz, (v) => ctx2.saveSettings({ defaultTz: v || browserTz() }), {
-        help: "Used when a page gives a time but no zone. Example: America/New_York."
-      })
+      h(
+        "label",
+        { class: "field" },
+        "Default time zone",
+        tzInput,
+        h("span", { class: "small" }, "Used when a page gives a time but no zone. Any city or zone in the world works.")
+      ),
+      tzNote
     );
     const llmToggle = h("input", { type: "checkbox", checked: s.llmEnabled });
     llmToggle.addEventListener("change", () => ctx2.saveSettings({ llmEnabled: llmToggle.checked }));
-    wrap.append(
-      h("h2", {}, "AI check"),
-      h("p", { class: "muted small", style: "margin-top:0" }, "The parser reads most pages on its own. The AI is only asked when the parser is unsure. It reads public page text only. Providers are tried in order."),
+    const ai = h(
+      "details",
+      { class: "more", style: "margin-top:18px" },
+      h("summary", {}, "AI help (optional)"),
+      h("p", { class: "muted small" }, "The parser reads most pages on its own. The AI is only asked when the parser is unsure. It sees public page text only."),
       h("label", { class: "check" }, llmToggle, "Use AI when the parser is unsure")
     );
-    for (const p of s.providers) wrap.append(providerBox(ctx2, p));
+    for (const p of s.providers) ai.append(providerBox(ctx2, p));
+    if (s.llmEnabled || s.providers.some((p) => p.apiKey)) ai.open = true;
+    wrap.append(ai);
     wrap.append(
       h("h2", {}, "Usage"),
       h("div", { class: "small muted" }, `${ctx2.counters.totalInvites} invites sent in total.`)
     );
-    void isScriptConfigured;
     return wrap;
   }
   function providerBox(ctx2, p) {
@@ -906,14 +1096,11 @@
     const mode = h("select", {}, ...["json_object", "json_schema", "none"].map((m) => h("option", { value: m, selected: m === p.jsonMode }, m)));
     mode.addEventListener("change", () => save({ jsonMode: mode.value }));
     const out = h("div", { class: "small" });
-    const test = h("button", {}, "Test key");
-    test.addEventListener("click", async () => {
-      test.disabled = true;
-      out.textContent = "Testing...";
+    const test = async () => {
+      out.textContent = "Testing the key...";
       const res = await ctx2.send({ type: "llmTest", providerId: p.id });
-      test.disabled = false;
       out.textContent = res.ok ? String(res.message) : res.error;
-    });
+    };
     return h(
       "div",
       { class: "card" },
@@ -921,11 +1108,22 @@
       h(
         "div",
         { class: "stack", style: "margin-top:8px" },
-        textField("API key", p.apiKey, (v) => save({ apiKey: v }), { type: "password" }),
-        textField("Model", p.model, (v) => save({ model: v })),
-        textField("Base URL", p.baseUrl, (v) => save({ baseUrl: v })),
-        h("label", { class: "field" }, "Structured output mode", mode),
-        h("div", { class: "row" }, test),
+        textField("API key", p.apiKey, async (v) => {
+          await save({ apiKey: v });
+          if (v) await test();
+        }, { type: "password" }),
+        h(
+          "details",
+          { class: "more" },
+          h("summary", {}, "Advanced"),
+          h(
+            "div",
+            { class: "stack", style: "margin-top:8px" },
+            textField("Model", p.model, (v) => save({ model: v })),
+            textField("Base URL", p.baseUrl, (v) => save({ baseUrl: v })),
+            h("label", { class: "field" }, "Structured output mode", mode)
+          )
+        ),
         out
       )
     );
@@ -936,9 +1134,12 @@
   var footer = document.getElementById("footer");
   var tabsEl = document.getElementById("tabs");
   var recordsApi = createRecords(chromeStore);
+  var gear = h("button", { class: "gear", title: "Settings", "aria-label": "Settings", onclick: () => ctx.setTab(tab === "settings" ? "add" : "settings") });
+  gear.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
   document.getElementById("brand").append(
     cat("idle", 46),
-    h("div", {}, h("div", { class: "wordmark" }, "captivum."), h("div", { class: "tagline" }, "Deadlines, caught."))
+    h("div", {}, h("div", { class: "wordmark" }, "captivum."), h("div", { class: "tagline" }, "Deadlines, caught.")),
+    gear
   );
   var tab = "add";
   var dirty = false;
@@ -991,9 +1192,9 @@
   function renderTabs() {
     const defs = [
       ["add", "Add"],
-      ["history", "History"],
-      ["settings", "Settings"]
+      ["history", "History"]
     ];
+    gear.setAttribute("aria-pressed", String(tab === "settings"));
     tabsEl.replaceChildren(
       ...defs.map(([id, label]) => {
         const pending = id === "add" ? ctx.records.filter((r) => r.status === "pending").length : 0;

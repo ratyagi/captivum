@@ -1,3 +1,5 @@
+import { fmtWhen } from '../lib/format';
+import { allZones } from '../lib/tz';
 import type { CaptivumRecord, Counters, ExtractedDate, Flag, Msg, Reply, Settings } from '../types';
 
 type Child = Node | string | null | false | undefined;
@@ -44,24 +46,7 @@ export interface Ctx {
   flushSave(id: string): Promise<void>;
 }
 
-function fmtDay(date: string): string {
-  const [y, m, d] = date.split('-').map(Number);
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(
-    new Date(Date.UTC(y, m - 1, d)),
-  );
-}
-
-function fmtClock(t: string): string {
-  const [hh, mm] = t.split(':').map(Number);
-  const ap = hh >= 12 ? 'PM' : 'AM';
-  return `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${ap}`;
-}
-
-export function fmtWhen(d: Pick<ExtractedDate, 'date' | 'time' | 'tz' | 'startDate' | 'startTime'>): string {
-  const end = `${fmtDay(d.date)}${d.time ? ', ' + fmtClock(d.time) : ''}${d.tz && d.time ? ' ' + d.tz : ''}`;
-  if (!d.startDate) return end;
-  return `${fmtDay(d.startDate)}${d.startTime ? ', ' + fmtClock(d.startTime) : ''} to ${end}`;
-}
+export { fmtWhen };
 
 export function statusChip(status: CaptivumRecord['status']): HTMLElement {
   const map: Record<CaptivumRecord['status'], [string, string]> = {
@@ -138,4 +123,17 @@ export function cat(mood: Mood = 'idle', size = 56): HTMLElement {
 
 export function emptyState(mood: Mood, text: string): HTMLElement {
   return h('div', { class: 'empty' }, cat(mood, 84), h('p', {}, text));
+}
+
+/** One shared list of every world time zone, for the zone fields. */
+export function ensureTzList(extra: string[] = []): void {
+  if (document.getElementById('tzlist')) return;
+  const dl = document.createElement('datalist');
+  dl.id = 'tzlist';
+  for (const t of new Set(['AoE', 'UTC', ...extra, ...allZones()])) {
+    const o = document.createElement('option');
+    o.value = t;
+    dl.append(o);
+  }
+  document.body.append(dl);
 }

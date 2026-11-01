@@ -4,22 +4,8 @@ import { buildEventTitle } from '../../lib/title';
 import { defaultLabel } from '../../lib/title';
 import { applyDerivedFlags, validateForSend } from '../../lib/validate';
 import { hostOf } from '../../lib/url';
-import { BAD_FLAGS, FLAG_TEXT, cat, confirmButton, emptyState, h, type Ctx } from '../ui';
-
-const TZ_OPTIONS = [
-  'AoE',
-  'UTC',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/London',
-  'Europe/Paris',
-  'Asia/Kolkata',
-  'Asia/Singapore',
-  'Asia/Tokyo',
-  'Australia/Sydney',
-];
+import { resolveZoneInput } from '../../lib/tz';
+import { BAD_FLAGS, FLAG_TEXT, cat, confirmButton, emptyState, ensureTzList, h, type Ctx } from '../ui';
 
 const ACTIVE = new Set(['extracting', 'pending', 'sending', 'queued', 'failed', 'error']);
 
@@ -32,7 +18,7 @@ export function renderAdd(ctx: Ctx): HTMLElement {
         'div',
         { class: 'notice' },
         'Your sender is not linked yet, so invites cannot be sent. ',
-        h('button', { class: 'link', onclick: () => ctx.setTab('settings') }, 'Open Settings'),
+        h('button', { class: 'link', onclick: () => ctx.setTab('settings') }, 'Set it up'),
       ),
     );
   }
@@ -40,20 +26,23 @@ export function renderAdd(ctx: Ctx): HTMLElement {
 
   const input = h('input', {
     type: 'text',
-    placeholder: 'Paste a link to a deadline or event',
+    placeholder: 'Paste a link and press Enter',
     value: ctx.addDraft,
     'aria-label': 'Link',
+    autofocus: true,
   });
   input.addEventListener('input', () => (ctx.addDraft = input.value));
   const errorBox = h('div', { class: 'small', style: 'color:var(--bad);margin-top:6px' });
-  const add = h('button', { class: 'primary' }, 'Add');
 
+  let busy = false;
   const submit = async () => {
     errorBox.textContent = '';
-    if (!input.value.trim()) return;
-    add.disabled = true;
+    if (busy || !input.value.trim()) return;
+    busy = true;
+    input.disabled = true;
     const res = await ctx.send({ type: 'extract', input: input.value });
-    add.disabled = false;
+    busy = false;
+    input.disabled = false;
     if (!res.ok) {
       errorBox.textContent = res.error;
       return;
@@ -62,27 +51,14 @@ export function renderAdd(ctx: Ctx): HTMLElement {
     ctx.flash = res.existing ? { kind: 'warn', text: 'That link is already in your list.' } : null;
     ctx.rerender();
   };
-  add.addEventListener('click', submit);
   input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
-
-  const paste = h(
-    'button',
-    {
-      title: 'Paste from clipboard',
-      onclick: async () => {
-        try {
-          const t = await navigator.clipboard.readText();
-          input.value = t.trim();
-          ctx.addDraft = input.value;
-          input.focus();
-        } catch {
-          errorBox.textContent = 'Chrome did not allow reading the clipboard. Paste with Ctrl+V or Cmd+V instead.';
-        }
-      },
-    },
-    'Paste',
+  // A pasted web address is read straight away, so there is no button to press.
+  input.addEventListener('paste', () =>
+    setTimeout(() => {
+      if (/^https?:\/\/\S+$/i.test(input.value.trim())) void submit();
+    }, 0),
   );
-  wrap.append(h('div', { class: 'row' }, input, paste, add), errorBox);
+  wrap.append(input, errorBox);
 
   const active = ctx.records.filter((r) => ACTIVE.has(r.status));
   if (!active.length && !ctx.flash) {
@@ -104,7 +80,7 @@ function renderCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
         'div',
         { class: 'card' },
         h('div', { class: 'row' }, cat('look', 44), `Reading ${hostOf(r.url)}...`),
-        h('div', { class: 'actions' }, h('button', { onclick: async () => (await ctx.send({ type: 'delete', id: r.id }), ctx.rerender()) }, 'Cancel')),
+        h('div', { class: 'actions' }, h('button', { class: 'link', onclick: async () => (await ctx.send({ type: 'delete', id: r.id }), ctx.rerender()) }, 'Cancel')),
       );
     case 'sending':
       return h('div', { class: 'card' }, h('div', { class: 'row' }, cat('look', 44), `Sending the invite for ${r.name || hostOf(r.url)}...`));
@@ -117,8 +93,8 @@ function renderCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
         h(
           'div',
           { class: 'actions' },
-          h('button', { onclick: () => ctx.send({ type: 'extract', input: r.url }).then(() => ctx.rerender()) }, 'Try again'),
-          h('button', { onclick: async () => (await ctx.send({ type: 'delete', id: r.id }), ctx.rerender()) }, 'Remove'),
+          h('button', { class: 'primary', onclick: () => ctx.send({ type: 'extract', input: r.url }).then(() => ctx.rerender()) }, 'Try again'),
+          h('button', { class: 'link', onclick: async () => (await ctx.send({ type: 'delete', id: r.id }), ctx.rerender()) }, 'Remove'),
         ),
       );
     case 'queued':
@@ -132,8 +108,9 @@ function renderCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
           'div',
           { class: 'actions' },
           h('button', { class: 'primary', onclick: async () => (await ctx.send({ type: 'deliver', id: r.id }), ctx.rerender()) }, 'Try now'),
-          h('button', { onclick: async () => (await ctx.send({ type: 'reopen', id: r.id }), ctx.rerender()) }, 'Edit'),
-          r.errorCode === 'not_configured' || r.errorCode === 'bad_secret' ? h('button', { onclick: () => ctx.setTab('settings') }, 'Settings') : null,
+          r.errorCode === 'not_configured' || r.errorCode === 'bad_secret'
+            ? h('button', { class: 'link', onclick: () => ctx.setTab('settings') }, 'Fix sender')
+            : h('button', { class: 'link', onclick: async () => (await ctx.send({ type: 'reopen', id: r.id }), ctx.rerender()) }, 'Edit'),
         ),
       );
     default:
@@ -169,7 +146,7 @@ function reviewCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
   });
 
   card.append(
-    h('label', { class: 'field' }, 'Name', nameInput),
+    nameInput,
     h('div', { class: 'small muted', style: 'margin-top:4px' }, `From ${hostOf(r.finalUrl || r.url)}`, r.usedLlm ? ' (checked with AI)' : ''),
   );
   for (const n of r.notes) card.append(h('div', { class: 'notice' }, n));
@@ -184,6 +161,7 @@ function reviewCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
   const addDate = h(
     'button',
     {
+      class: 'link',
       onclick: () => {
         const base: ExtractedDate = {
           id: `m${Date.now().toString(36)}`,
@@ -204,10 +182,10 @@ function reviewCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
         renderDates();
       },
     },
-    'Add a date',
+    '+ Add a date',
   );
 
-  const confirm = h('button', { class: 'primary' }, 'Confirm and send');
+  const confirm = h('button', { class: 'primary wide' }, 'Send invite');
   confirm.addEventListener('click', async () => {
     const probs = validateForSend({ name: draft.name, dates: draft.dates });
     if (probs.length) {
@@ -233,19 +211,22 @@ function reviewCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
   });
 
   card.append(
-    h('h2', {}, 'Dates'),
     datesBox,
     h('div', { class: 'actions' }, addDate),
     errors,
+    confirm,
     h(
       'div',
-      { class: 'actions' },
-      confirm,
-      confirmButton('Discard', async () => {
-        ctx.drafts.delete(r.id);
-        await ctx.send({ type: 'delete', id: r.id });
-        ctx.rerender();
-      }),
+      { class: 'center' },
+      confirmButton(
+        'Discard',
+        async () => {
+          ctx.drafts.delete(r.id);
+          await ctx.send({ type: 'delete', id: r.id });
+          ctx.rerender();
+        },
+        'link danger',
+      ),
     ),
   );
   return card;
@@ -306,68 +287,51 @@ function dateRow(
     return i;
   };
 
-  const hasStart = !!d.startDate;
-  const windowToggle = h('label', { class: 'check small muted' });
-  const wt = h('input', { type: 'checkbox', checked: hasStart });
-  windowToggle.append(wt, 'This runs over a period');
-  wt.addEventListener('change', () => {
-    if (wt.checked) {
-      d.startDate = d.date || null;
-      d.label = defaultLabel(d.type, true);
-    } else {
-      d.startDate = null;
-      d.startTime = null;
-      d.label = defaultLabel(d.type, false);
-    }
+  const tz = h('input', { type: 'text', value: d.tz ?? '', list: 'tzlist', placeholder: `Default (${ctx.settings.defaultTz}). Try a city, like London`, 'aria-label': 'Time zone' });
+  tz.addEventListener('change', () => {
+    const raw = tz.value.trim();
+    const res = raw ? resolveZoneInput(raw) : { tz: null as string | null };
+    // "London" becomes Europe/London. Unknown text is kept so the card can warn about it.
+    d.tz = res.tz ?? (raw || null);
+    if (res.tz) tz.value = res.tz;
     touch(true);
-    const repl = dateRow(ctx, r, draft, d, refreshTitles);
-    row.replaceWith(repl);
   });
 
-  const tz = h('input', { type: 'text', value: d.tz ?? '', list: 'tzlist', placeholder: `Default (${ctx.settings.defaultTz})`, 'aria-label': 'Time zone' });
-  tz.addEventListener('change', () => {
-    d.tz = tz.value.trim() || null;
+  // The start date lives under "More". Fill it in and the entry becomes a period.
+  const startInput = h('input', { type: 'date', value: d.startDate ?? '' });
+  startInput.addEventListener('change', () => {
+    const wasPlain = d.label === defaultLabel(d.type, d.startDate !== null);
+    d.startDate = startInput.value || null;
+    if (!d.startDate) d.startTime = null;
+    if (wasPlain) d.label = defaultLabel(d.type, d.startDate !== null);
+    label.value = d.label;
     touch(true);
   });
+  const startTime = timeInput(d.startTime, (v) => (d.startTime = v));
+  const more = h(
+    'details',
+    { class: 'more' },
+    h('summary', {}, 'More'),
+    h(
+      'div',
+      { class: 'stack', style: 'margin-top:8px' },
+      h('div', { class: 'grid2' }, field('Starts (for a period)', startInput), field('Start time', startTime)),
+      field('Time zone', tz),
+      d.rawPhrase ? h('div', { class: 'quote' }, d.startPhrase ? `"${d.startPhrase}" ... ` : '', `"${d.rawPhrase}"`) : null,
+    ),
+  );
+  if (d.startDate || d.tz || d.flags.includes('no_timezone')) more.open = true;
 
   const parts: Array<Node | null> = [
     h('div', { class: 'row' }, check, label),
-    d.startDate !== null
-      ? h(
-          'div',
-          { class: 'grid2' },
-          field('Starts', dateInput(d.startDate, (v) => (d.startDate = v || null))),
-          field('Start time (optional)', timeInput(d.startTime, (v) => (d.startTime = v))),
-        )
-      : null,
-    h(
-      'div',
-      { class: 'grid2' },
-      field(d.startDate !== null ? 'Ends' : 'Date', dateInput(d.date, (v) => (d.date = v))),
-      field('Time (optional)', timeInput(d.time, (v) => (d.time = v))),
-    ),
-    field('Time zone', tz),
-    windowToggle,
+    h('div', { class: 'grid2' }, field(d.startDate ? 'Ends' : 'Date', dateInput(d.date, (v) => (d.date = v))), field('Time (optional)', timeInput(d.time, (v) => (d.time = v)))),
     chips,
-    d.rawPhrase
-      ? h('div', { class: 'quote' }, d.startPhrase ? `"${d.startPhrase}" ... ` : '', `"${d.rawPhrase}"`)
-      : null,
-    h('div', { class: 'small muted' }, 'Event title'),
     h('div', { class: 'title-preview', 'data-title-for': d.id }, buildEventTitle(draft.name, d)),
-    confirmButton('Remove this date', () => {
-      const i = draft.dates.indexOf(d);
-      if (i >= 0) draft.dates.splice(i, 1);
-      ctx.scheduleSave(r.id);
-      row.remove();
-    }),
+    more,
   ];
   row.append(...(parts.filter(Boolean) as Node[]));
   paintChips();
 
-  if (!document.getElementById('tzlist')) {
-    const dl = h('datalist', { id: 'tzlist' });
-    for (const t of new Set([ctx.settings.defaultTz, ...TZ_OPTIONS])) dl.append(h('option', { value: t }));
-    document.body.append(dl);
-  }
+  ensureTzList([ctx.settings.defaultTz]);
   return row;
 }
