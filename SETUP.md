@@ -29,7 +29,7 @@ Do this while signed in to the **sender Gmail** account.
 5. In **Project Settings**, scroll to **Script properties** and add two properties:
    - `SECRET`: a long random string. Make one by mashing 30 or more letters and digits. You will paste the same string into the extension.
    - `RECEIVER`: the university email address.
-6. Back in the editor, pick the function `doGet` in the top bar and click **Run**. Google asks you to authorise. Choose your account. If you see "Google hasn't verified this app", click **Advanced**, then **Go to (project name)**, then **Allow**. This is your own script, so that warning is expected.
+6. Back in the editor, pick the function `authorize` in the top bar and click **Run**. Google asks you to authorise. Choose your account. If you see "Google hasn't verified this app", click **Advanced**, then **Go to (project name)**, then **Allow**. This is your own script, so that warning is expected.
 7. Click **Deploy**, then **New deployment**. For the type choose **Web app**. Set:
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -80,6 +80,7 @@ After editing the code in Apps Script, click **Deploy**, then **Manage deploymen
 | "Google returned a web page instead of data" | The script is not deployed to Anyone, or the URL is old | Redeploy as in step 2.7 and paste the new `/exec` URL |
 | "The secret does not match" | The secret in the extension differs from the script property | Copy the same value into both |
 | "Sender and receiver are the same address" | `RECEIVER` equals the Gmail that runs the script | Use a different receiver |
+| "The script does not have permission to perform that action" | The calendar permission was not granted, or was granted before the manifest was added | Run `authorize` in the editor and allow everything, then Deploy, Manage deployments, pencil, New version, Deploy |
 | "Add SECRET and RECEIVER" | Script properties are missing | Step 2.5 |
 | Test invite never arrives | Outlook put it in Junk, or `RECEIVER` has a typo | Check Junk and the property value |
 | Invite arrives with no Accept button | Outlook treated it as plain mail | Mark it Not junk, then try again. Tell the project, this is a known risk |

@@ -37,6 +37,15 @@ function ok_(extra) {
   return json_(out);
 }
 
+/**
+ * Run this once from the editor (pick "authorize" in the function list, then Run).
+ * It touches Calendar so Google asks for the calendar permission up front.
+ */
+function authorize() {
+  var cal = calendarId_();
+  Logger.log('Calendar ready: ' + Calendar.Calendars.get(cal).summary + '. Sender: ' + Session.getEffectiveUser().getEmail());
+}
+
 /** Opening the /exec link in a browser answers with this. It reveals nothing private. */
 function doGet() {
   return json_({ ok: true, service: 'captivum', version: VERSION });
