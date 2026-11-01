@@ -67,6 +67,13 @@ These cannot be tested without your Google and Outlook accounts:
 4. Reading LinkedIn and X posts through the background tab while signed in.
 5. Which AI provider is more accurate on your pages. Run about 25 links through each and compare.
 
+## Design
+
+- Palette from the Hello wallpaper swatch: `#000330`, `#000c58`, `#3457b1`, `#0030cf`, `#879ee2`.
+- Lettering: Grandstander for headings and the wordmark, Nunito for text. Both are SIL OFL, bundled in `extension/fonts` with their licences.
+- Mascot: an original black blob cat drawn in code (`cat()` in `src/sidepanel/ui.ts`). Moods: idle, looking (while reading or sending), happy, dizzy (errors), sleepy (empty history).
+- Sticker style: thick outlines, hard shadows, uneven card corners. Light and dark mode follow the system.
+
 ## Privacy
 
 Page text goes to an AI provider only when the parser is unsure and you added a key. Event details go only to your own Apps Script. There is no analytics and no server run by this project.

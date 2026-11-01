@@ -1,12 +1,12 @@
 import { hostOf } from '../../lib/url';
-import { confirmButton, fmtWhen, h, statusChip, type Ctx } from '../ui';
+import { confirmButton, emptyState, fmtWhen, h, statusChip, type Ctx } from '../ui';
 
 export function renderHistory(ctx: Ctx): HTMLElement {
   const wrap = h('div', {});
   if (ctx.flash) wrap.append(h('div', { class: `notice ${ctx.flash.kind}`, style: 'margin-top:0' }, ctx.flash.text));
   const items = ctx.records.filter((r) => r.status === 'sent' || r.status === 'cancelled');
   if (!items.length) {
-    wrap.append(h('p', { class: 'muted' }, 'Nothing here yet. Invites you send will be listed here.'));
+    wrap.append(emptyState('sleepy', 'Nothing here yet. Invites you send will be listed here.'));
     return wrap;
   }
   for (const r of items) {

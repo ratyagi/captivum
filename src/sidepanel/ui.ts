@@ -98,3 +98,44 @@ export function confirmButton(label: string, onConfirm: () => void, cls = 'dange
   });
   return b;
 }
+
+export type Mood = 'idle' | 'look' | 'happy' | 'dizzy' | 'sleepy';
+
+const INK = '#000330';
+const HEAD =
+  'M6 41C6 31 10 24 12.5 9L23 19.5C29 18 35 18 41 19.5L51.5 9C54 24 58 31 58 41C58 52.5 46.5 58 32 58C17.5 58 6 52.5 6 41Z';
+const BLOB = 'M10 20C14 2 40 -4 58 6C74 16 76 44 62 58C48 70 16 70 4 52C-2 42 4 32 10 20Z';
+
+function eyes(mood: Mood): string {
+  const stroke = 'stroke="#fff" stroke-width="3.6" stroke-linecap="round" fill="none"';
+  switch (mood) {
+    case 'happy':
+      return `<g class="eyes"><path d="M14.5 43Q22 33 29.5 43" ${stroke}/><path d="M34.5 43Q42 33 49.5 43" ${stroke}/></g>`;
+    case 'dizzy':
+      return `<g class="eyes"><path d="M16 34L28 46M28 34L16 46M36 34L48 46M48 34L36 46" ${stroke}/></g>`;
+    case 'sleepy':
+      return `<g class="eyes"><path d="M15 42H29M35 42H49" ${stroke}/></g>`;
+    default:
+      return `<g class="eyes"><circle cx="22" cy="40" r="7.6" fill="#fff"/><circle cx="42" cy="40" r="7.6" fill="#fff"/>` +
+        `<circle class="pupil" cx="22" cy="40" r="3.6" fill="${INK}"/><circle class="pupil" cx="42" cy="40" r="3.6" fill="${INK}"/></g>`;
+  }
+}
+
+/** The Captivum mascot: a black blob cat on a periwinkle blob. */
+export function cat(mood: Mood = 'idle', size = 56): HTMLElement {
+  const wrap = document.createElement('span');
+  wrap.className = `mascot m-${mood}`;
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute('aria-label', 'Captivum cat');
+  wrap.innerHTML =
+    `<svg viewBox="-8 -4 80 72" width="${size}" height="${Math.round((size * 72) / 80)}" aria-hidden="true">` +
+    `<path d="${BLOB}" fill="#879ee2"/>` +
+    `<path d="${HEAD}" fill="${INK}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>` +
+    eyes(mood) +
+    `</svg>`;
+  return wrap;
+}
+
+export function emptyState(mood: Mood, text: string): HTMLElement {
+  return h('div', { class: 'empty' }, cat(mood, 84), h('p', {}, text));
+}

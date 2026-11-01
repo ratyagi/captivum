@@ -4,7 +4,7 @@ import { buildEventTitle } from '../../lib/title';
 import { defaultLabel } from '../../lib/title';
 import { applyDerivedFlags, validateForSend } from '../../lib/validate';
 import { hostOf } from '../../lib/url';
-import { BAD_FLAGS, FLAG_TEXT, confirmButton, h, type Ctx } from '../ui';
+import { BAD_FLAGS, FLAG_TEXT, cat, confirmButton, emptyState, h, type Ctx } from '../ui';
 
 const TZ_OPTIONS = [
   'AoE',
@@ -36,7 +36,7 @@ export function renderAdd(ctx: Ctx): HTMLElement {
       ),
     );
   }
-  if (ctx.flash) wrap.append(h('div', { class: `notice ${ctx.flash.kind}` }, ctx.flash.text));
+  if (ctx.flash) wrap.append(h('div', { class: `notice ${ctx.flash.kind}` }, ctx.flash.kind === 'good' ? cat('happy', 40) : null, ctx.flash.text));
 
   const input = h('input', {
     type: 'text',
@@ -87,10 +87,9 @@ export function renderAdd(ctx: Ctx): HTMLElement {
   const active = ctx.records.filter((r) => ACTIVE.has(r.status));
   if (!active.length && !ctx.flash) {
     wrap.append(
-      h(
-        'p',
-        { class: 'muted' },
-        'Paste a link from LinkedIn, X, a forum or an organisation site. Captivum reads the page, shows you the deadline to check, and sends the invite when you confirm.',
+      emptyState(
+        'idle',
+        'Paste a link from LinkedIn, X, a forum or an organisation site. I will read it, show you the deadline to check, and send the invite when you confirm.',
       ),
     );
   }
@@ -104,17 +103,17 @@ function renderCard(ctx: Ctx, r: CaptivumRecord): HTMLElement {
       return h(
         'div',
         { class: 'card' },
-        h('div', { class: 'row' }, h('span', { class: 'spinner' }), `Reading ${hostOf(r.url)}...`),
+        h('div', { class: 'row' }, cat('look', 44), `Reading ${hostOf(r.url)}...`),
         h('div', { class: 'actions' }, h('button', { onclick: async () => (await ctx.send({ type: 'delete', id: r.id }), ctx.rerender()) }, 'Cancel')),
       );
     case 'sending':
-      return h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { class: 'spinner' }), `Sending the invite for ${r.name || hostOf(r.url)}...`));
+      return h('div', { class: 'card' }, h('div', { class: 'row' }, cat('look', 44), `Sending the invite for ${r.name || hostOf(r.url)}...`));
     case 'error':
       return h(
         'div',
         { class: 'card' },
         h('h3', {}, hostOf(r.url)),
-        h('div', { class: 'notice bad' }, r.error ?? 'Could not read this page.'),
+        h('div', { class: 'notice bad' }, cat('dizzy', 40), r.error ?? 'Could not read this page.'),
         h(
           'div',
           { class: 'actions' },

@@ -5,7 +5,7 @@ import type { Counters, CaptivumRecord, Msg, Reply, Settings } from '../types';
 import { renderAdd } from './views/add';
 import { renderHistory } from './views/history';
 import { renderSettings } from './views/settings';
-import { h, type Ctx } from './ui';
+import { cat, h, type Ctx } from './ui';
 
 type Tab = 'add' | 'history' | 'settings';
 
@@ -13,6 +13,11 @@ const main = document.getElementById('main') as HTMLElement;
 const footer = document.getElementById('footer') as HTMLElement;
 const tabsEl = document.getElementById('tabs') as HTMLElement;
 const recordsApi = createRecords(chromeStore);
+
+document.getElementById('brand')!.append(
+  cat('idle', 46),
+  h('div', {}, h('div', { class: 'wordmark' }, 'captivum.'), h('div', { class: 'tagline' }, 'Deadlines, caught.')),
+);
 
 let tab: Tab = 'add';
 let dirty = false;
